@@ -120,10 +120,16 @@ function decrypt(key, iv, buf) {
 
 // Photo filename -> a stable, meaningless id. The web directory should not
 // expose original filenames: "tax-return-2024.jpg" tells a passer-by plenty
-// even while its contents stay encrypted. Derived from the salt, so a new
-// password reshuffles every id as well.
-function photoId(salt, name) {
-  return crypto.createHmac('sha256', salt).update(name).digest('hex').slice(0, 24);
+// even while its contents stay encrypted.
+//
+// Keyed with the derived key, NOT with the salt. The salt travels in the clear
+// at the front of vault.enc, so keying with it would let anyone who fetched the
+// vault compute HMAC(salt, "passport.jpg") and check whether that file is in
+// there -- turning "filenames are hidden" into "filenames are guessable". The
+// key is reachable only with the password. Changing the password changes the
+// key, so every id is reshuffled then too.
+function photoId(key, name) {
+  return crypto.createHmac('sha256', key).update(name).digest('hex').slice(0, 24);
 }
 
 /* --------------------------------------------------------- Target: local / ssh */
@@ -137,17 +143,33 @@ function localTarget(dir) {
       try { return fs.readFileSync(path.join(dir, rel)); } catch { return null; }
     },
     listPhotos() {
-      try { return fs.readdirSync(path.join(dir, 'photos')); } catch { return []; }
+      try { return fs.readdirSync(path.join(dir, 'photos')).filter(f => PHOTO_FILE.test(f)); }
+      catch { return []; }
     },
     write(rel, buf) {
       fs.writeFileSync(path.join(dir, rel), buf, { mode: 0o644 });
     },
     remove(rels) {
-      for (const r of rels) { try { fs.unlinkSync(path.join(dir, r)); } catch {} }
+      for (const r of rels) {
+        if (!PHOTO_FILE.test(path.basename(r))) continue;
+        try { fs.unlinkSync(path.join(dir, r)); } catch {}
+      }
     },
     finish() {}
   };
 }
+
+// Anything handed to ssh ends up as ONE command string that a shell on the far
+// side interprets -- passing an argument array to execFileSync does not change
+// that, it only decides how the local process is spawned. So every path that
+// reaches the remote command has to be quoted for that remote shell.
+function shq(s) {
+  return "'" + String(s).replace(/'/g, `'\\''`) + "'";
+}
+
+// Names this tool could have written, and nothing else. Used to decide what may
+// be deleted at the target: a file that does not match was not put there by us.
+const PHOTO_FILE = /^[0-9a-f]{24}\.enc$/;
 
 function remoteTarget(host, dir) {
   const ssh = (args, opts = {}) =>
@@ -162,13 +184,18 @@ function remoteTarget(host, dir) {
     name: host + ':' + dir,
     remote: true,
     read(rel) {
-      try { return ssh(['cat', dir + '/' + rel], { stdio: ['ignore', 'pipe', 'ignore'] }); }
+      try { return ssh(['cat', shq(dir + '/' + rel)], { stdio: ['ignore', 'pipe', 'ignore'] }); }
       catch { return null; }
     },
     listPhotos() {
       try {
-        return ssh(['ls', '-1', dir + '/photos'], { stdio: ['ignore', 'pipe', 'ignore'] })
-          .toString().split('\n').filter(Boolean);
+        // Plain `ls` on purpose: `find -printf` would be tidier but is GNU-only,
+        // and a target running BSD or macOS would simply fail. A newline inside a
+        // filename can fake an extra line here -- which is harmless, because the
+        // filter below only lets through names this tool could have written, and
+        // deleting a name that does not exist is a no-op.
+        return ssh(['ls', '-1', shq(dir + '/photos')], { stdio: ['ignore', 'pipe', 'ignore'] })
+          .toString().split('\n').filter(f => PHOTO_FILE.test(f));
       } catch { return []; }
     },
     write(rel, buf) {
@@ -176,8 +203,11 @@ function remoteTarget(host, dir) {
       pending.push(rel);
     },
     remove(rels) {
-      if (!rels.length) return;
-      ssh(['rm', '-f', ...rels.map(r => dir + '/' + r)], { stdio: 'ignore' });
+      // Belt and braces: the list is already filtered by PHOTO_FILE, and every
+      // path is quoted for the remote shell on top of that.
+      const safe = rels.filter(r => PHOTO_FILE.test(path.basename(r)));
+      if (!safe.length) return;
+      ssh(['rm', '-f', ...safe.map(r => shq(dir + '/' + r))], { stdio: 'ignore' });
     },
     finish() {
       if (pending.length) {
@@ -352,7 +382,7 @@ async function main() {
       try { st = fs.statSync(p); } catch { continue; }
       if (!st.isFile() || f.startsWith('.')) continue;
 
-      const id = photoId(salt, f);
+      const id = photoId(key, f);
       photos[f] = { id, type: MIME[path.extname(f).toLowerCase()] || 'application/octet-stream' };
       keep.add(id + '.enc');
       photoBytes += st.size;

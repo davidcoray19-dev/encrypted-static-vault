@@ -7,12 +7,13 @@ A second markdown file becomes a second tab. That is the whole navigation model.
 ```
 vault.enc         salt(16) | iv(12) | ciphertext+tag
 data/photos/<id>.enc       | iv(12) | ciphertext+tag
-<id>              = HMAC-SHA256(salt, filename)[0:24]
+<id>              = HMAC-SHA256(key, filename)[0:24]
 ```
 
-Photo filenames never reach the server. `sunset.png` is stored under a name
-derived from the salt, so a directory listing gives away nothing but the count
-and the sizes.
+Photo filenames never reach the server. `sunset.png` is stored under a name derived
+from the *key*, not the salt — the salt is public, so keying with it would let anyone
+holding the vault check a guessed filename. A directory listing gives away nothing
+but the count and the sizes.
 
 ## The key
 

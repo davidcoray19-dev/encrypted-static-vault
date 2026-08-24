@@ -53,10 +53,15 @@ If that distinction matters to you, host the `web/` files yourself, or open them
 from a local copy and point them at a remote `data/` directory.
 
 **It does not hide metadata.** Anyone who can fetch the vault learns its size, and
-from `data/photos/` the number of photos and how large each one is. Filenames are
-not exposed — each photo is stored under `HMAC-SHA256(salt, filename)[0:24]`, so
-`tax-return-2024.jpg` does not announce itself in a directory listing — but the
-shape of your collection is visible.
+from `data/photos/` the number of photos and how large each one is. The shape of
+your collection is visible even though its contents are not.
+
+Filenames are not, and are not guessable. Each photo is stored under
+`HMAC-SHA256(key, filename)[0:24]`, keyed with the **derived key** rather than the
+salt. That distinction is the whole protection: the salt travels in the clear at the
+front of `vault.enc`, so keying with it would let anyone holding the vault compute
+the id for a guessed name like `passport.jpg` and check whether it is present. Keyed
+with the derived key, computing an id requires the password.
 
 **The password is attackable offline.** Whoever holds a copy of `vault.enc` can
 guess at it for as long as they like, on hardware of their choosing. 310,000
@@ -72,7 +77,7 @@ A memorable four-word phrase beats a short password with punctuation in it.
 ```
 vault.enc         salt(16) │ iv(12) │ ciphertext+tag
 data/photos/<id>.enc       │ iv(12) │ ciphertext+tag
-<id>              = HMAC-SHA256(salt, filename)[0:24]
+<id>              = HMAC-SHA256(key, filename)[0:24]
 ```
 
 `vault.enc` decrypts to one JSON object: every markdown file as a string, plus a
@@ -80,9 +85,11 @@ map from photo filename to `{ id, type }`. Photos are separate files so the page
 can decrypt them lazily, as they scroll into view, instead of holding your entire
 photo collection in memory to read one note.
 
-The salt is stored with the vault and shared by every file. Changing the password
-generates a new salt, which changes every photo id — so a password change
-re-encrypts and re-uploads everything, by design.
+The salt is stored with the vault and shared by every file; each file gets its own
+random IV. Photo ids are keyed with the derived key, not the salt, so they cannot be
+computed by anyone who merely downloaded the vault. Changing the password changes the
+key and therefore every id — so a password change re-encrypts and re-uploads
+everything, by design.
 
 ### Crypto
 
@@ -91,7 +98,17 @@ on both sides deliberately: `sync.js` uses Node's `crypto`, the page uses WebCry
 and the byte layout is identical so either can read what the other wrote.
 
 GCM means the ciphertext is authenticated. A wrong password fails as a decryption
-error rather than producing garbage, and a tampered vault fails the same way.
+error rather than producing garbage, and a tampered vault fails the same way — an
+attacker cannot quietly alter a note or repoint a photo.
+
+**Why PBKDF2 and not Argon2id.** Argon2id is the better password hash: memory-hard,
+far more expensive to attack on a GPU. It is also not in WebCrypto. Using it would
+mean shipping a WASM build to every reader, which is a dependency, a larger attack
+surface in the one file that handles the password, and a thing that can fail to load.
+PBKDF2-SHA256 at 310,000 rounds is what the browser offers natively and what OWASP
+currently recommends for it. The honest summary: this is the strongest KDF available
+without dependencies, and it is weaker than the strongest KDF that exists. Your
+passphrase is doing more work here than the KDF is.
 
 ### The key never touches disk
 
@@ -157,7 +174,13 @@ node sync.js --source ~/vault --target myserver:/var/www/vault/data
 
 **Incremental by default.** Photos are re-encrypted only when their size or
 modification time has changed; state lives in `~/.cache/vault-sync/`. Files
-deleted from the source are deleted at the target. `--all` forces everything.
+deleted from the source are deleted at the target.
+
+This is the same heuristic `rsync` uses by default, and it has the same blind spot:
+an edit that preserves both size and mtime goes unnoticed. Hashing every file on
+every run would close it, at the cost of reading the entire collection each time —
+which is exactly what the incremental path exists to avoid. If you have touched a
+file in a way that might have kept its timestamp, run `--all`.
 
 **Mounted secure volumes.** If you keep the plaintext in Cryptomator, gocryptfs
 or anything else that appears as a FUSE mount, `sync.js` finds it on its own
