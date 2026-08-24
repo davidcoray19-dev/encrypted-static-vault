@@ -1,0 +1,7 @@
+# The vault itself never belongs in version control, encrypted or not.
+web/data/*
+!web/data/.gitkeep
+
+node_modules/
+*.log
+.DS_Store

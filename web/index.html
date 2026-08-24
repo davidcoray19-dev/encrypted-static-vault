@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0f0f0f">
+<meta name="robots" content="noindex, nofollow">
+<title>Vault</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@400&display=swap">
+<!-- use-credentials: behind HTTP Basic Auth the manifest is otherwise fetched
+     without credentials and comes back 401, which breaks installation -->
+<link rel="manifest" href="manifest.json" crossorigin="use-credentials">
+<link rel="icon" href="icon.png">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  color-scheme: dark;
+  --bg:      #0f0f0f;
+  --bg2:     #1a1a1a;
+  --bg3:     #242424;
+  --border:  rgba(255,255,255,0.08);
+  --border2: rgba(255,255,255,0.16);
+  --text:    #f0f0f0;
+  --text2:   #a8a8a8;
+  --text3:   #6e6e6e;
+  --primary: #9ecaff;
+  --on-primary: #0f2540;
+  --error:   #ff8a80;
+  --radius:    14px;
+  --radius-sm:  8px;
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Roboto', 'Segoe UI', sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+.screen { display: none; }
+.screen.active { display: flex; flex-direction: column; min-height: 100dvh; }
+
+/* ---------- Unlock ---------- */
+#screen-unlock {
+  align-items: center; justify-content: center;
+  padding: 1.5rem;
+}
+.unlock-box { width: 100%; max-width: 340px; text-align: center; }
+.unlock-icon {
+  width: 64px; height: 64px; margin: 0 auto 1.25rem;
+  border-radius: 50%; background: var(--bg3);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.8rem;
+}
+.unlock-box h1 { font-size: 1.35rem; font-weight: 500; margin-bottom: 0.4rem; }
+.unlock-box p  { color: var(--text3); font-size: 0.85rem; margin-bottom: 1.75rem; }
+
+.field {
+  display: flex; align-items: center; gap: 0.5rem;
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 0 0.5rem 0 1rem;
+  margin-bottom: 0.9rem;
+  transition: border-color 0.15s;
+}
+.field:focus-within { border-color: var(--primary); }
+.field input {
+  flex: 1; background: none; border: none; outline: none;
+  color: var(--text); font-family: inherit; font-size: 1rem;
+  padding: 0.95rem 0;
+}
+.eye {
+  background: none; border: none; color: var(--text3);
+  font-size: 1.1rem; padding: 0.5rem; cursor: pointer; line-height: 1;
+}
+
+.btn {
+  width: 100%; border: none; border-radius: 999px;
+  background: var(--primary); color: var(--on-primary);
+  font-family: inherit; font-size: 0.95rem; font-weight: 500;
+  padding: 0.9rem; cursor: pointer;
+  position: relative; overflow: hidden;
+  transition: transform 0.12s, opacity 0.15s;
+}
+.btn:active { transform: scale(0.98); }
+.btn:disabled { opacity: 0.5; cursor: default; }
+
+#unlock-msg {
+  min-height: 1.2rem; margin-top: 0.9rem;
+  font-size: 0.85rem; color: var(--error);
+}
+
+/* ---------- Ansicht ---------- */
+.app-bar {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: calc(env(safe-area-inset-top, 0px) + 0.7rem) 1rem 0.7rem;
+  background: rgba(15,15,15,0.92);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+}
+.app-bar .title {
+  flex: 1; font-size: 1rem; font-weight: 500;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.icon-btn {
+  background: none; border: none; color: var(--text2);
+  width: 40px; height: 40px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.1rem; cursor: pointer; flex-shrink: 0;
+  transition: background 0.15s;
+}
+.icon-btn:active { background: var(--bg3); }
+
+#tabs {
+  display: flex; gap: 0.4rem; overflow-x: auto;
+  padding: 0.7rem 1rem 0; scrollbar-width: none;
+}
+#tabs::-webkit-scrollbar { display: none; }
+#tabs.hidden { display: none; }
+.tab {
+  background: var(--bg2); border: 1px solid var(--border);
+  color: var(--text2); font-family: inherit; font-size: 0.82rem;
+  padding: 0.45rem 0.9rem; border-radius: 999px;
+  white-space: nowrap; cursor: pointer;
+}
+.tab.sel { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
+
+/* ---------- Markdown ---------- */
+#md {
+  flex: 1;
+  width: 100%; max-width: 720px; margin: 0 auto;
+  padding: 1.5rem 1.25rem calc(env(safe-area-inset-bottom, 0px) + 4rem);
+  font-size: 1.02rem; line-height: 1.75;
+  overflow-wrap: break-word;
+}
+#md h1, #md h2, #md h3, #md h4, #md h5, #md h6 {
+  font-weight: 500; line-height: 1.3;
+  margin: 2rem 0 0.75rem;
+}
+#md > :first-child { margin-top: 0; }
+#md h1 { font-size: 1.7rem; }
+#md h2 { font-size: 1.4rem; }
+#md h3 { font-size: 1.18rem; }
+#md h4, #md h5, #md h6 { font-size: 1.02rem; color: var(--text2); }
+#md p { margin: 0 0 1.1rem; }
+#md ul, #md ol { margin: 0 0 1.1rem; padding-left: 1.4rem; }
+#md li { margin-bottom: 0.35rem; }
+#md li > ul, #md li > ol { margin: 0.35rem 0 0; }
+#md blockquote {
+  border-left: 3px solid var(--border2);
+  padding: 0.15rem 0 0.15rem 1rem;
+  margin: 0 0 1.1rem; color: var(--text2);
+}
+#md hr { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
+#md a { color: var(--primary); text-decoration: none; border-bottom: 1px solid rgba(158,202,255,0.3); }
+#md a:active { opacity: 0.7; }
+#md code {
+  font-family: 'Roboto Mono', monospace; font-size: 0.88em;
+  background: var(--bg3); border-radius: 5px; padding: 0.13em 0.38em;
+}
+#md pre {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 0.9rem 1rem;
+  margin: 0 0 1.1rem; overflow-x: auto;
+}
+#md pre code { background: none; padding: 0; font-size: 0.85rem; line-height: 1.6; }
+#md strong { font-weight: 700; }
+#md del { color: var(--text3); }
+#md table { border-collapse: collapse; width: 100%; margin: 0 0 1.1rem; font-size: 0.92rem; display: block; overflow-x: auto; }
+#md th, #md td { border: 1px solid var(--border); padding: 0.5rem 0.7rem; text-align: left; }
+#md th { background: var(--bg2); font-weight: 500; }
+
+#md img {
+  display: block; max-width: 100%; height: auto;
+  border-radius: var(--radius); margin: 0 0 1.1rem;
+  background: var(--bg2); cursor: zoom-in;
+}
+#md img.loading { min-height: 180px; animation: puls 1.4s ease-in-out infinite; }
+@keyframes puls { 0%,100% { opacity: 0.35; } 50% { opacity: 0.65; } }
+#md .photo-error {
+  display: block; padding: 1rem; margin: 0 0 1.1rem;
+  border: 1px dashed var(--border2); border-radius: var(--radius);
+  color: var(--text3); font-size: 0.85rem; text-align: center;
+}
+#md a.photo-link::after { content: ' \2197'; font-size: 0.85em; }
+
+/* ---------- Lightbox ---------- */
+#lightbox {
+  position: fixed; inset: 0; z-index: 100;
+  background: #000; display: none;
+  align-items: center; justify-content: center;
+  overflow: auto; padding: 0;
+}
+#lightbox.open { display: flex; }
+#lightbox img { max-width: 100%; max-height: 100dvh; object-fit: contain; }
+#lb-close {
+  position: fixed; top: calc(env(safe-area-inset-top, 0px) + 0.5rem); right: 0.5rem;
+  width: 44px; height: 44px; border-radius: 50%;
+  background: rgba(0,0,0,0.55); color: #fff; border: none;
+  font-size: 1.3rem; cursor: pointer; z-index: 101;
+}
+
+#empty { color: var(--text3); text-align: center; padding: 3rem 1rem; font-size: 0.9rem; line-height: 1.8; }
+</style>
+</head>
+<body>
+
+<!-- ================= Unlock ================= -->
+<div class="screen active" id="screen-unlock">
+  <div class="unlock-box">
+    <div class="unlock-icon">&#128274;</div>
+    <h1>Vault</h1>
+    <p>Enter the password to decrypt the contents.</p>
+    <div class="field">
+      <input type="password" id="pw" placeholder="Password" autocomplete="current-password"
+             autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go">
+      <button class="eye" id="eye" type="button" aria-label="Show password">&#128065;</button>
+    </div>
+    <button class="btn" id="unlock-btn">Unlock</button>
+    <div id="unlock-msg"></div>
+  </div>
+</div>
+
+<!-- ================= Reader ================= -->
+<div class="screen" id="screen-view">
+  <div class="app-bar">
+    <div class="title" id="doc-title">Vault</div>
+    <button class="icon-btn" id="reload-btn" title="Reload">&#8635;</button>
+    <button class="icon-btn" id="lock-btn" title="Lock">&#128274;</button>
+  </div>
+  <div id="tabs" class="hidden"></div>
+  <div id="md"></div>
+</div>
+
+<!-- ================= Lightbox ================= -->
+<div id="lightbox">
+  <button id="lb-close" aria-label="Close">&#10005;</button>
+  <img id="lb-img" alt="">
+</div>
+
+<script>
+'use strict';
+
+/* ============================================================
+   Crypto. PBKDF2-SHA256 (310,000 rounds) -> AES-GCM-256.
+   The key exists only in this tab's memory: never in localStorage,
+   never in IndexedDB, discarded on pagehide.
+   Binary layout:
+     vault.enc       : salt(16) | iv(12) | ciphertext+tag
+     photos/<id>.enc :           iv(12) | ciphertext+tag
+   ============================================================ */
+
+const PBKDF2_ROUNDS = 310000;
+let cryptoKey = null;   // CryptoKey, memory only
+let vault     = null;   // { files: {name: markdown}, photos: {name: {id, type}} }
+let activeFile = null;
+const blobCache = new Map();
+
+async function deriveKey(pw, salt) {
+  const raw = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations: PBKDF2_ROUNDS, hash: 'SHA-256' },
+    raw, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']
+  );
+}
+
+async function fetchBytes(path) {
+  const r = await fetch(path + '?t=' + Date.now(), { cache: 'no-store' });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return new Uint8Array(await r.arrayBuffer());
+}
+
+async function decryptBytes(bytes, iv) {
+  return crypto.subtle.decrypt({ name: 'AES-GCM', iv }, cryptoKey, bytes);
+}
+
+/* ============================================================
+   Markdown → HTML (kleiner Parser, keine externe Bibliothek)
+   ============================================================ */
+
+function esc(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// Bold/italic/strikethrough. Runs over text only, never over finished tags.
+// Underscores count at word boundaries only, so that filenames like
+// OIP_148_392.jpg and snake_case survive untouched.
+function emphasis(t) {
+  t = t.replace(/\*\*\*([^*]+)\*\*\*/g, '<strong><em>$1</em></strong>');
+  t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  t = t.replace(/(^|[^*\w])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+  t = t.replace(/(^|[\s([{"'])_([^_\n]+)_(?=[\s)\]}.,!?:;"']|$)/g, '$1<em>$2</em>');
+  t = t.replace(/~~([^~]+)~~/g, '<del>$1</del>');
+  return t;
+}
+
+function inline(s) {
+  let out = esc(s);
+
+  // Finished HTML fragments are parked while the inline rules run. Without
+  // this, an underscore in an image path (or the _blank in target="_blank")
+  // would tear apart the tags this function just produced.
+  const NUL   = String.fromCharCode(0);
+  const parts = [];
+  const park  = html => NUL + (parts.push(html) - 1) + NUL;
+
+  // `code` -- contents are left completely untouched
+  out = out.replace(/`([^`]+)`/g, (m, c) => park('<code>' + c + '</code>'));
+
+  // ![alt](src)
+  out = out.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (m, alt, src) =>
+    park('<img data-src="' + src + '" alt="' + alt + '" class="loading">'));
+
+  // [text](url) -- only the link text keeps inline formatting
+  out = out.replace(/\[([^\]]*)\]\(([^)\s]+)\)/g, (m, txt, url) => {
+    const content = emphasis(txt);
+    if (/^(https?:|mailto:|#)/i.test(url))
+      return park('<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + content + '</a>');
+    return park('<a href="#" class="photo-link" data-file="' + url + '">' + content + '</a>');
+  });
+
+  out = emphasis(out);
+
+  return out.replace(new RegExp(NUL + '(\\d+)' + NUL, 'g'), (m, i) => parts[+i]);
+}
+
+function mdToHtml(md) {
+  const zeilen = md.replace(/\r\n?/g, '\n').split('\n');
+  const html = [];
+  let i = 0;
+
+  function listeLesen(ordered) {
+    const tag = ordered ? 'ol' : 'ul';
+    const re  = ordered ? /^(\s*)\d+[.)]\s+(.*)$/ : /^(\s*)[-*+]\s+(.*)$/;
+    const items = [];
+    while (i < zeilen.length) {
+      const m = zeilen[i].match(re);
+      if (!m) break;
+      items.push({ depth: Math.floor(m[1].length / 2), text: m[2] });
+      i++;
+    }
+    // verschachtelte Ebenen aufbauen
+    let out = '<' + tag + '>';
+    let depth = 0;
+    for (const it of items) {
+      while (it.depth > depth) { out += '<' + tag + '>'; depth++; }
+      while (it.depth < depth) { out += '</' + tag + '>'; depth--; }
+      out += '<li>' + inline(it.text) + '</li>';
+    }
+    while (depth-- > 0) out += '</' + tag + '>';
+    return out + '</' + tag + '>';
+  }
+
+  while (i < zeilen.length) {
+    const z = zeilen[i];
+
+    if (!z.trim()) { i++; continue; }
+
+    // Codeblock
+    let m = z.match(/^```(\w*)\s*$/);
+    if (m) {
+      i++;
+      const buf = [];
+      while (i < zeilen.length && !/^```/.test(zeilen[i])) buf.push(zeilen[i++]);
+      i++;
+      html.push('<pre><code>' + esc(buf.join('\n')) + '</code></pre>');
+      continue;
+    }
+
+    // Heading
+    m = z.match(/^(#{1,6})\s+(.*)$/);
+    if (m) { html.push('<h' + m[1].length + '>' + inline(m[2]) + '</h' + m[1].length + '>'); i++; continue; }
+
+    // Trennlinie
+    if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(z)) { html.push('<hr>'); i++; continue; }
+
+    // Tabelle
+    if (/\|/.test(z) && i + 1 < zeilen.length && /^\s*\|?[\s:|-]+\|[\s:|-]*$/.test(zeilen[i + 1])) {
+      const zellen = r => r.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|').map(c => c.trim());
+      const kopf = zellen(z);
+      i += 2;
+      let t = '<table><thead><tr>' + kopf.map(c => '<th>' + inline(c) + '</th>').join('') + '</tr></thead><tbody>';
+      while (i < zeilen.length && /\|/.test(zeilen[i]) && zeilen[i].trim()) {
+        t += '<tr>' + zellen(zeilen[i]).map(c => '<td>' + inline(c) + '</td>').join('') + '</tr>';
+        i++;
+      }
+      html.push(t + '</tbody></table>');
+      continue;
+    }
+
+    // Zitat
+    if (/^>\s?/.test(z)) {
+      const buf = [];
+      while (i < zeilen.length && /^>\s?/.test(zeilen[i])) buf.push(zeilen[i++].replace(/^>\s?/, ''));
+      html.push('<blockquote>' + mdToHtml(buf.join('\n')) + '</blockquote>');
+      continue;
+    }
+
+    // Listen
+    if (/^\s*[-*+]\s+/.test(z))   { html.push(listeLesen(false)); continue; }
+    if (/^\s*\d+[.)]\s+/.test(z)) { html.push(listeLesen(true));  continue; }
+
+    // Absatz
+    const buf = [];
+    while (i < zeilen.length && zeilen[i].trim()
+           && !/^(#{1,6}\s|```|>\s?|\s*[-*+]\s|\s*\d+[.)]\s)/.test(zeilen[i])
+           && !/^\s*([-*_])(\s*\1){2,}\s*$/.test(zeilen[i])) buf.push(zeilen[i++]);
+    if (buf.length) html.push('<p>' + inline(buf.join('\n').replace(/ {2,}$/gm, '<br>')) + '</p>');
+    else i++;
+  }
+
+  return html.join('\n');
+}
+
+/* ============================================================
+   Photos: a path from the markdown ("photos/img1.jpg") -> blob URL
+   ============================================================ */
+
+// Only the filename matters. Whether the markdown points at photos/,
+// images/ or nothing at all makes no difference.
+function photoName(path) {
+  return decodeURIComponent(path.split('?')[0].split('#')[0]).split('/').pop();
+}
+
+async function photoUrl(path) {
+  const name = photoName(path);
+  if (blobCache.has(name)) return blobCache.get(name);
+  const entry = vault.photos[name];
+  if (!entry) throw new Error('not in vault');
+  const bytes = await fetchBytes('data/photos/' + entry.id + '.enc');
+  const plain  = await decryptBytes(bytes.subarray(12), bytes.subarray(0, 12));
+  const url   = URL.createObjectURL(new Blob([plain], { type: entry.type }));
+  blobCache.set(name, url);
+  return url;
+}
+
+async function insertPhotos() {
+  const images = document.querySelectorAll('#md img[data-src]');
+  for (const img of images) {
+    try {
+      img.src = await photoUrl(img.dataset.src);
+      img.classList.remove('loading');
+      img.removeAttribute('data-src');
+      img.addEventListener('click', () => lightbox(img.src));
+    } catch (e) {
+      const fallback = document.createElement('span');
+      fallback.className = 'photo-error';
+      fallback.textContent = 'Missing photo: ' + photoName(img.dataset.src);
+      img.replaceWith(fallback);
+    }
+  }
+}
+
+function lightbox(url) {
+  document.getElementById('lb-img').src = url;
+  document.getElementById('lightbox').classList.add('open');
+}
+
+document.getElementById('lightbox').addEventListener('click', e => {
+  if (e.target.id !== 'lb-img') closeLightbox();
+});
+document.getElementById('lb-close').addEventListener('click', closeLightbox);
+function closeLightbox() {
+  document.getElementById('lightbox').classList.remove('open');
+  document.getElementById('lb-img').removeAttribute('src');
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
+
+/* ============================================================
+   Rendering
+   ============================================================ */
+
+function showFile(name) {
+  activeFile = name;
+  document.getElementById('doc-title').textContent = name.replace(/\.md$/i, '');
+  document.getElementById('md').innerHTML = mdToHtml(vault.files[name] || '');
+  document.querySelectorAll('#tabs .tab').forEach(t => t.classList.toggle('sel', t.dataset.name === name));
+  window.scrollTo(0, 0);
+
+  document.querySelectorAll('#md a.photo-link').forEach(a => {
+    a.addEventListener('click', async e => {
+      e.preventDefault();
+      try { lightbox(await photoUrl(a.dataset.file)); }
+      catch (err) { alert('Photo not found: ' + photoName(a.dataset.file)); }
+    });
+  });
+
+  insertPhotos();
+}
+
+function buildTabs() {
+  const names = Object.keys(vault.files).sort();
+  const tabs  = document.getElementById('tabs');
+  tabs.innerHTML = '';
+  if (names.length <= 1) { tabs.classList.add('hidden'); return; }
+  tabs.classList.remove('hidden');
+  for (const n of names) {
+    const b = document.createElement('button');
+    b.className = 'tab';
+    b.dataset.name = n;
+    b.textContent = n.replace(/\.md$/i, '');
+    b.addEventListener('click', () => showFile(n));
+    tabs.appendChild(b);
+  }
+}
+
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+/* ============================================================
+   Unlocking
+   ============================================================ */
+
+const pwInput  = document.getElementById('pw');
+const msgEl    = document.getElementById('unlock-msg');
+const unlockBtn = document.getElementById('unlock-btn');
+
+async function unlock() {
+  const pw = pwInput.value;
+  if (!pw) return;
+  unlockBtn.disabled = true;
+  unlockBtn.textContent = 'Decrypting...';
+  msgEl.textContent = '';
+  try {
+    const bytes = await fetchBytes('data/vault.enc');
+    if (bytes.length < 29) throw new Error('empty');
+    cryptoKey = await deriveKey(pw, bytes.subarray(0, 16));
+    const plain = await decryptBytes(bytes.subarray(28), bytes.subarray(16, 28));
+    vault = JSON.parse(new TextDecoder().decode(plain));
+    if (!vault.files) throw new Error('malformed');
+    pwInput.value = '';
+    buildTabs();
+    const names = Object.keys(vault.files).sort();
+    showScreen('screen-view');
+    if (names.length) showFile(names.includes('entry.md') ? 'entry.md' : names[0]);
+    else document.getElementById('md').innerHTML = '<div id="empty">No markdown file in the vault yet.<br>Add one to your source folder and run <code>sync.js</code>.</div>';
+  } catch (e) {
+    cryptoKey = null; vault = null;
+    msgEl.textContent = (e.message === 'HTTP 404')
+      ? 'No vault on the server -- run sync.js first.'
+      : 'Wrong password.';
+    pwInput.select();
+  } finally {
+    unlockBtn.disabled = false;
+    unlockBtn.textContent = 'Unlock';
+  }
+}
+
+unlockBtn.addEventListener('click', unlock);
+pwInput.addEventListener('keydown', e => { if (e.key === 'Enter') unlock(); });
+document.getElementById('eye').addEventListener('click', () => {
+  pwInput.type = pwInput.type === 'password' ? 'text' : 'password';
+  pwInput.focus();
+});
+
+document.getElementById('lock-btn').addEventListener('click', () => location.reload());
+document.getElementById('reload-btn').addEventListener('click', async () => {
+  try {
+    const bytes = await fetchBytes('data/vault.enc');
+    const plain  = await decryptBytes(bytes.subarray(28), bytes.subarray(16, 28));
+    vault = JSON.parse(new TextDecoder().decode(plain));
+    blobCache.forEach(u => URL.revokeObjectURL(u));
+    blobCache.clear();
+    buildTabs();
+    showFile(vault.files[activeFile] !== undefined ? activeFile : Object.keys(vault.files).sort()[0]);
+  } catch (e) {
+    alert('Reload failed: the password has changed. Reloading the page.');
+    location.reload();
+  }
+});
+
+// Throw everything away when the page goes away
+window.addEventListener('pagehide', () => {
+  cryptoKey = null; vault = null;
+  blobCache.forEach(u => URL.revokeObjectURL(u));
+  blobCache.clear();
+});
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+pwInput.focus();
+</script>
+</body>
+</html>
