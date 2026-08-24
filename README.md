@@ -2,6 +2,11 @@
 
 Private notes and photos on a web server that never sees them.
 
+**[Live demo](https://davidcoray19-dev.github.io/encrypted-static-vault/)** — the
+password is `demo`. It is written here on purpose: the demo vault holds sample text,
+and the point is that you can watch it decrypt in your own browser, with a server
+that only ever handed you ciphertext.
+
 Markdown and images are encrypted on your own machine. What gets uploaded is
 ciphertext and nothing else. The page that reads it is a single HTML file with
 no backend, no database and no dependencies — decryption happens in the browser,
@@ -20,6 +25,9 @@ Two pieces, and the split is the whole point:
 
 - **`web/`** — the reader. Static files. Put them anywhere that serves HTTP.
 - **`sync/sync.js`** — the writer. Runs on your machine, never on the server.
+
+(`demo/` holds the sample vault behind the link above, built by the same `sync.js`
+and published by `.github/workflows/pages.yml`. Nothing else depends on it.)
 
 ---
 
